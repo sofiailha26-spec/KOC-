@@ -383,6 +383,13 @@
         </label>
       </div>
 
+      <div class="form-row" id="dialogMemesWrapR" style="display:none;">
+        <label class="checkbox-row" style="background:#e0e7ff;border-color:#a5b4fc;color:#3730a3;">
+          <input type="checkbox" id="dialogMemesR">
+          <span>🎭 对话类原创 Memes（不打折，单条封顶 $80）</span>
+        </label>
+      </div>
+
       <div class="info-box purple">
         💡 倒推机制:输入目标报价,系统反向计算达人主页"最低播放量"应达到的水平。<br>
         用途:谈判时核对达人开价是否合理 / 评估目标合作的达人量级。
@@ -637,6 +644,7 @@ function renderTypeHint() {
   const show = (type === 'memes') ? 'block' : 'none';
   document.getElementById('highEngWrap').style.display = show;
   document.getElementById('highEngWrapR').style.display = show;
+  document.getElementById('dialogMemesWrapR').style.display = show;
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -840,6 +848,7 @@ function reverseCalc() {
   const targetPrice = parseFloat(document.getElementById('targetPrice').value);
   const type = document.getElementById('contentType').value;
   const highEng = document.getElementById('highEngagementR').checked;
+  const dialogMemes = document.getElementById('dialogMemesR') ? document.getElementById('dialogMemesR').checked : false;
   const data = REGION_DATA[region];
   const typeMeta = TYPE_META[type];
 
@@ -850,6 +859,56 @@ function reverseCalc() {
 
   if (!targetPrice || targetPrice <= 0) {
     showResult(true, '⚠️ 请输入有效价格', '', '');
+    return;
+  }
+
+  // 对话类原创 memes：特殊处理，不打折，封顶 $80
+  if (type === 'memes' && dialogMemes) {
+    const dialogCap = data.dialogMemesCap || 80;
+
+    if (targetPrice > dialogCap) {
+      showResult(true, `⚠️ 价格超出对话类原创 Memes 封顶`,
+        `对话类原创 Memes 单条封顶 $${dialogCap}。当前价格 $${targetPrice} 超过封顶,无法精确反推播放量。建议降低目标价格。`, '');
+      return;
+    }
+
+    // 用封顶价来找对应区间
+    let matched = null;
+    for (const t of data.tiers) {
+      const [lo, hi, pLo, pHi] = t;
+      if (dialogCap >= pLo && dialogCap <= pHi) {
+        matched = t;
+        break;
+      }
+    }
+
+    if (!matched) {
+      showResult(true, '⚠️ 无匹配区间', '对话类原创 Memes 封顶价不在任何区间内', '');
+      return;
+    }
+
+    const [lo, hi, pLo, pHi] = matched;
+    let views;
+    if (pHi === pLo) {
+      views = lo;
+    } else {
+      const ratio = (dialogCap - pLo) / (pHi - pLo);
+      views = Math.round(lo + ratio * (hi - lo));
+    }
+
+    const html = `
+      <h3>✅ 倒推播放量 — ${data.name}</h3>
+      <div class="price-display">${views.toLocaleString()} <span class="unit">次播放</span></div>
+      <div class="price-suggest">对话类原创 Memes · 封顶价 $${dialogCap} 对应区间:播放量 ${lo.toLocaleString()}~${hi >= 99999999 ? '∞' : hi.toLocaleString()}</div>
+      <div class="meta">
+        <strong>💰 目标价格:</strong>$${targetPrice}<br>
+        <strong>🎬 视频类型:</strong>对话类原创 Memes（不打折）<br>
+        <strong>📊 倒推结果:</strong>达人主页"最低播放量"应达到 <strong>${views.toLocaleString()}</strong><br>
+        <strong>🤝 谈判建议:</strong>${getNegotiateAdvice(views)}<br>
+        <strong>⚠️ 注意:</strong>实际报价以达人主页最近最低观看为准,数据每天变化
+      </div>
+    `;
+    showResult(false, '', '', html, true, 'purple');
     return;
   }
 
@@ -865,13 +924,13 @@ function reverseCalc() {
   }
 
   const typeCap = getTypeCap(typeMeta, data);
-  if (typeCap && targetPrice >= typeCap) {
-    showResult(true, `⚠️ 价格已达 ${typeMeta.label} 封顶`,
-      `${typeMeta.label} 单条封顶 $${typeCap}。当前价格 $${targetPrice} ${targetPrice > typeCap ? '超过封顶' : '触及封顶'},无法精确反推播放量。建议改类型或降低目标价格。`, '');
+  if (typeCap && targetPrice > typeCap) {
+    showResult(true, `⚠️ 价格超出 ${typeMeta.label} 封顶`,
+      `${typeMeta.label} 单条封顶 $${typeCap}。当前价格 $${targetPrice} 超过封顶,无法精确反推播放量。建议改类型或降低目标价格。`, '');
     return;
   }
-  if (data.cap && targetPrice >= data.cap) {
-    showResult(true, '⚠️ 价格已达区域封顶',
+  if (data.cap && targetPrice > data.cap) {
+    showResult(true, '⚠️ 价格超出区域封顶',
       `${data.name} 区域价格封顶 $${data.cap}。该价格对应播放量为最高档(≥ ${data.tiers[data.tiers.length-1][0].toLocaleString()})。`, '');
     return;
   }
@@ -989,6 +1048,9 @@ function clearAllForward() {
 function clearAllReverse() {
   document.getElementById('targetPrice').value = '';
   document.getElementById('highEngagementR').checked = false;
+  if (document.getElementById('dialogMemesR')) {
+    document.getElementById('dialogMemesR').checked = false;
+  }
   document.getElementById('result').classList.remove('show');
 }
 
